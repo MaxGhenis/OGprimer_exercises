@@ -6,15 +6,33 @@ import time
 
 
 def u_crra(c, sigma):
+	""" Constant relative risk aversion utility function.
+
+	Args:
+		c: Consumption.
+		sigma: Coefficient of relative risk aversion.
+
+	Returns:
+		Utility.
+	"""
     return (c ** (1 - sigma) - 1) / (1 - sigma)
 
 
-# Derivative of CRRA is c^(-sigma)
+
 def du_crra(c, sigma):
+	""" Derivative of constant relative risk aversion utility function.
+
+	Args:
+		c: Consumption.
+		sigma: Coefficient of relative risk aversion.
+
+	Returns:
+		Derivative of utility with respect to consumption.
+	"""
     return c ** (-sigma)
 
 
-def w_t(b_2_t, b_3_t, alpha=ALPHA, A=A, n=n):
+def w_t(b_2_t, b_3_t, alpha, A, n):
     """ Equilibrium wage rate as a function of the distribution of capital,
         capital income share, productivity, and total labor.
     
@@ -31,13 +49,13 @@ def w_t(b_2_t, b_3_t, alpha=ALPHA, A=A, n=n):
     return (1 - alpha) * A * ((b_2_t + b_3_t) / n) ** alpha
 
 
-def wpath(Kpath, alpha=ALPHA, A=A, n=n):
+def wpath(Kpath, alpha, A, L):
     """ Wage path given aggregate capital path.
     """
-    return np.power((1 - alpha) * A * Kpath / n, alpha)
+    return np.power((1 - alpha) * A * Kpath / L, alpha)
 
 
-def r_t(b_2_t, b_3_t, alpha=ALPHA, A=A, n=n, delta=DELTA):
+def r_t(b_2_t, b_3_t, alpha, A, L, delta):
     """ Equilibrium interest rate as a function of the distribution of capital,
         capital income share, productivity, total labor, and depreciation rate.
     
@@ -52,13 +70,13 @@ def r_t(b_2_t, b_3_t, alpha=ALPHA, A=A, n=n, delta=DELTA):
     Returns:
         Equilibrium interest rate as of time t.
     """
-    return alpha * A * (n / (b_2_t + b_3_t)) ** (1 - alpha) - delta
+    return alpha * A * (L / (b_2_t + b_3_t)) ** (1 - alpha) - delta
 
 
-def rpath(Kpath, alpha=ALPHA, A=A, n=n, delta=DELTA):
+def rpath(Kpath, alpha, A, L, delta):
     """ Interest rate path given aggregate capital path.
     """
-    return alpha * A * np.power(n / Kpath, 1 - alpha) - delta
+    return alpha * A * np.power(L / Kpath, 1 - alpha) - delta
 
 
 def c(b_2, b_3, w, r, nvec):
@@ -88,10 +106,10 @@ def feasible(f_params, bvec_guess):
     nvec, A, alpha, delta = f_params
     b_2, b_3 = bvec_guess
     # Calculate total labor supply.
-    n = sum(nvec)
+    L = sum(nvec)
     # Calculate equilibrium wage and interest rates.
-    w = w_t(b_2, b_3, alpha, A, n)
-    r = r_t(b_2, b_3, alpha, A, n, delta)
+    w = w_t(b_2, b_3, alpha, A, L)
+    r = r_t(b_2, b_3, alpha, A, L, delta)
     # Calculate consumption levels via Equation 2.7.
     c_1, c_2, c_3 = c(b_2, b_3, w, r, nvec)
     # Calculate K via market-clearing condition, Equation 2.23.
@@ -139,11 +157,8 @@ def ss_opt_fun(bvec, beta, sigma, nvec, L, A, alpha, delta):
     #       beta*(1+r(b_2,b_3))u'(n_2*w(b_2,b_3)+[1+r(b_2,b_3)]b_2-b_3)
     # 2.30: u'(n_2*w(b_2,b_3)+[1+r(b_2,b_3)]b_2-b_3)=
     #       B(1+r(b_2,b_3))u'([1+r(b_2,b_3)]b_3+n_3*w(b_2,b_3))
-    # u' function: du_crra(c, crra=CRRA)
-    # w function: w_t(b_2_t, b_3_t, alpha=ALPHA, A=A, n=n)
-    # r function: r_t(b_2_t, b_3_t, alpha=ALPHA, A=A, n=n, delta=DELTA)
-    w = w_t(b_2, b_3, alpha, A, n)
-    r = r_t(b_2, b_3, alpha, A, n, delta)
+    w = w_t(b_2, b_3, alpha, A, L)
+    r = r_t(b_2, b_3, alpha, A, L, delta)
     lhs_2_29 = du_crra(n_1 * w - b_2, sigma)
     rhs_2_29 = beta * (1 + r) * du_crra(n_2 * w + (1 + r) * b_2 - b_3)
     lhs_2_30 = du_crra(n_2 * w + (1 + r) * b_2 - b_3, sigma)
@@ -238,8 +253,8 @@ def b_3_2_opt_fun(b_3_2, bvec, Kpath, beta, sigma, nvec, L, A, alpha, delta):
     #     return [100, 100]
     b_2_1, b_3_1 = bvec
     n_1, n_2, n_3 = nvec
-    w = wpath(Kpath, alpha, A, n)
-    r = rpath(Kpath, alpha, A, n, delta)
+    w = wpath(Kpath, alpha, A, L)
+    r = rpath(Kpath, alpha, A, L, delta)
     lhs = du_crra(n_2 * w[0] + (1 + r[0]) * b_2_1 - b_3_2, sigma)
     rhs = beta * (1 + r[1]) * du_crra((1 + r[2] * b_3_2 + n_2 * w[1]), sigma)
     return [lhs - rhs]
