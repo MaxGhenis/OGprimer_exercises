@@ -6,29 +6,28 @@ import time
 
 
 def u_crra(c, sigma):
-	""" Constant relative risk aversion utility function.
+    """ Constant relative risk aversion utility function.
 
-	Args:
-		c: Consumption.
-		sigma: Coefficient of relative risk aversion.
+    Args:
+        c: Consumption.
+        sigma: Coefficient of relative risk aversion.
 
-	Returns:
-		Utility.
-	"""
+    Returns:
+        Utility.
+    """
     return (c ** (1 - sigma) - 1) / (1 - sigma)
 
 
-
 def du_crra(c, sigma):
-	""" Derivative of constant relative risk aversion utility function.
+    """ Derivative of constant relative risk aversion utility function.
 
-	Args:
-		c: Consumption.
-		sigma: Coefficient of relative risk aversion.
+    Args:
+        c: Consumption.
+        sigma: Coefficient of relative risk aversion.
 
-	Returns:
-		Derivative of utility with respect to consumption.
-	"""
+    Returns:
+        Derivative of utility with respect to consumption.
+    """
     return c ** (-sigma)
 
 
@@ -49,7 +48,7 @@ def w_t(b_2_t, b_3_t, alpha, A, n):
     return (1 - alpha) * A * ((b_2_t + b_3_t) / n) ** alpha
 
 
-def wpath(Kpath, alpha, A, L):
+def get_wpath(Kpath, alpha, A, L):
     """ Wage path given aggregate capital path.
     """
     return np.power((1 - alpha) * A * Kpath / L, alpha)
@@ -73,13 +72,15 @@ def r_t(b_2_t, b_3_t, alpha, A, L, delta):
     return alpha * A * (L / (b_2_t + b_3_t)) ** (1 - alpha) - delta
 
 
-def rpath(Kpath, alpha, A, L, delta):
+def get_rpath(Kpath, alpha, A, L, delta):
     """ Interest rate path given aggregate capital path.
     """
     return alpha * A * np.power(L / Kpath, 1 - alpha) - delta
 
 
 def c(b_2, b_3, w, r, nvec):
+    """ Consumption 
+    """
     c_1 = nvec[0] * w - b_2
     c_2 = nvec[1] * w + (1 + r) * b_2 - b_3
     c_3 = nvec[2] * w + (1 + r) * b_3
@@ -160,10 +161,11 @@ def ss_opt_fun(bvec, beta, sigma, nvec, L, A, alpha, delta):
     w = w_t(b_2, b_3, alpha, A, L)
     r = r_t(b_2, b_3, alpha, A, L, delta)
     lhs_2_29 = du_crra(n_1 * w - b_2, sigma)
-    rhs_2_29 = beta * (1 + r) * du_crra(n_2 * w + (1 + r) * b_2 - b_3)
+    rhs_2_29 = beta * (1 + r) * du_crra(n_2 * w + (1 + r) * b_2 - b_3, sigma)
     lhs_2_30 = du_crra(n_2 * w + (1 + r) * b_2 - b_3, sigma)
-    rhs_2_30 = beta * (1 + r) * du_crra((1 + r) * b_3 + n_3 * w)
+    rhs_2_30 = beta * (1 + r) * du_crra((1 + r) * b_3 + n_3 * w, sigma)
     return [lhs_2_29 - rhs_2_29, lhs_2_30 - rhs_2_30]
+
 
 def get_SS(params, bvec_guess, SS_graphs=False):
     """ Calculates steady-state solution.
@@ -230,13 +232,125 @@ def get_SS(params, bvec_guess, SS_graphs=False):
             }
 
 
-def b_3_2_opt_fun(b_3_2, bvec, Kpath, beta, sigma, nvec, L, A, alpha, delta):
+def b_3_2_opt_fun(b_3_2, b0, wpath, rpath, beta, sigma, nvec):
     """ Function to root-find to get steady-state solution.
 
     Args:
         b_3_2: Savings of middle-aged s=2 for the last period of his life.
-        bvec: Initial savings [b_2_1, b_3_1].
-        Kpath: Transition path of aggregate capital.
+        b0: Initial savings [b_2_1, b_3_1].
+        wpath: Transition path of aggregate capital.
+        rpath:
+        beta:
+        sigma:
+        nvec:
+
+    Returns:
+        Euler error.
+    """
+    lhs = du_crra(nvec[1] * wpath[0] + (1 + rpath[0]) * b0[0] - b_3_2, sigma)
+    rhs = (beta * (1 + rpath[1]) * 
+        du_crra((1 + rpath[1] * b_3_2 + nvec[2] * wpath[1]), sigma))
+    return lhs - rhs
+
+
+def tpi_b_3_2(b_3_2_guess, b0, wpath, rpath, beta, sigma, nvec, tol):
+    """ Solves for b_3_2, the first step of TPI.
+    """
+    return opt.root(b_3_2_opt_fun, b_3_2_guess,
+                    (b0, wpath, rpath, beta, sigma, nvec),
+                    tol=tol).x
+
+
+def l2_norm(v1, v2):
+    """ Sum of squared percent deviations.
+    """
+    return np.power(v1 / v2 - 1, 2)
+
+
+def tpi_pair_opt_fun(bvec, wpath, rpath, beta, sigma, nvec, t):
+    """
+    Args:
+        bvec: Vector of two savings levels to solve for, e.g. b_2_2 and b_3_3.
+        wpath:
+        rpath:
+        beta:
+        sigma:
+        nvec:
+        t: Time period to solve for, i.e. b_{2,t} an b_{3,t+1}.
+    """
+    n_1, n_2, n_3 = nvec
+    # Equation 2.32.
+    lhs_2_32 = du_crra(n_1 * wpath[t-2] - bvec[0], sigma)
+    rhs_2_32 = (beta * (1 + rpath[t-1]) * 
+                du_crra(n_2 * wpath[t-1] + (1 + rpath[t-1]) * bvec[0] - bvec[1],
+                        sigma))
+    # Equation 2.33.
+    lhs_2_33 = du_crra(n_2 * wpath[t-1] + (1 + rpath[t-1]) * bvec[0] - bvec[1],
+                       sigma)
+    rhs_2_33 = (beta * (1 + rpath[t]) *
+                du_crra((1 + rpath[t]) * bvec[1] + n_3 * wpath[t], sigma))
+    return [rhs_2_32 - lhs_2_32, rhs_2_33 - lhs_2_33]
+
+
+def tpi_pair(bvec_guess, wpath, rpath, beta, sigma, nvec, t, tol):
+    """ Solve for a pair of savings at a time t.
+
+    Args:
+        bvec_guess: Guessed vector of two savings levels to solve for,
+            e.g. b_2_2 and b_3_3.
+        wpath:
+        rpath:
+        beta:
+        sigma:
+        nvec:
+        t: Time period to solve for, i.e. b_{2,t} an b_{3,t+1}.
+        tol: Tolerance.
+    """
+    return opt.root(tpi_pair_opt_fun, bvec_guess,
+        (wpath, rpath, beta, sigma, nvec, t),
+        tol=tol).x
+
+
+def tpi_iteration(b0, b_ss, Kpath, beta, sigma, nvec, alpha, A, L, delta, T, m,
+                  tol):
+    """ Single iteration.
+
+    Returns:
+        Path of savings.
+    """
+    # Calculate wpath and rpath.
+    wpath = get_wpath(Kpath, alpha, A, L)
+    rpath = get_rpath(Kpath, alpha, A, L, delta)
+    # Initialize savings path with one column per age and one row per period.
+    # e.g. bpath[0][1] corresponds to b_{2,3}.
+    bpath = np.zeros([T + m - 1, 2])
+    print(bpath)
+    # Calculate b_{3,2}.
+    b_3_2_guess = b_ss[1]  # Guess the steady state.
+    print(b_3_2_guess)
+    bpath[1][0] = tpi_b_3_2(b_3_2_guess, b0, wpath, rpath, beta, sigma, nvec,
+                            tol)
+    print(bpath)
+    # Calculate remaining periods.
+    for t in range(2, T + m):
+        res = tpi_pair(b_ss[1:], wpath, rpath, beta, sigma, nvec, t, tol)
+        bpath[t-2][0] = res[0]
+        bpath[t-1][1] = res[1]
+    return bpath
+
+
+def convex_combo(Kpath, Kpath_prime, xi):
+    return xi * Kpath_prime + (1 - xi) * Kpath
+
+
+def tpi(b0_ratios, bvec_guess, beta, sigma, nvec, L, A, alpha, delta, T, m, xi,
+        tol):
+    """ Full equilibrium transition path.
+
+    Args:
+        b0_ratios: Initial distribution of savings [b_{2,1}, b_{3,1}] as
+            multiples of b_ss (steady-state values).
+        bvec_guess: Initial guess for the steady-state savings vector.
         beta:
         sigma:
         nvec:
@@ -244,26 +358,29 @@ def b_3_2_opt_fun(b_3_2, bvec, Kpath, beta, sigma, nvec, L, A, alpha, delta):
         A:
         alpha:
         delta:
+        T: 
+        m: Number of additioanl periods to solve for beyond T.
+        xi: Kpath blending parameter.
+        tol: Tolerance for calculating the steady state, b_{3,2},
+            each [b_{2,t}, b_{3_t+1}], and Kpath.
 
     Returns:
-        Euler error.
+        fd
     """
-    # # (nvec, A, alpha, delta
-    # if infeasible((nvec, A, alpha, delta), bvec):
-    #     return [100, 100]
-    b_2_1, b_3_1 = bvec
-    n_1, n_2, n_3 = nvec
-    w = wpath(Kpath, alpha, A, L)
-    r = rpath(Kpath, alpha, A, L, delta)
-    lhs = du_crra(n_2 * w[0] + (1 + r[0]) * b_2_1 - b_3_2, sigma)
-    rhs = beta * (1 + r[1]) * du_crra((1 + r[2] * b_3_2 + n_2 * w[1]), sigma)
-    return [lhs - rhs]
-
-
-def tpi_b_3_2(b_3_2_guess, bvec, Kpath, beta, sigma, nvec, L, A, alpha, delta,
-              tol):
-    """ Solves for b_3_2, the first step of TPI.
-    """
-    return opt.root(b_3_2_opt_fun, b_3_2_guess,
-                    (bvec, Kpath, beta, sigma, nvec, L, A, alpha, delta),
-                    tol=tol).x
+    # Calculate steady state.
+    ss = get_SS((beta, sigma, nvec, L, A, alpha, delta, tol), bvec_guess)
+    b_ss = ss['b_ss']
+    # Calculate b0.
+    b0 = b_ss * b0_ratios
+    # Calculate initial Kpath using linear interpolation.
+    Kpath = np.linspace(sum(b0), sum(b_ss), num=T)
+    Kpath_diff = tol + 1
+    # Loop until Kpath convergence is reached.
+    while Kpath_diff > tol:
+        bpath = tpi_iteration(b0, b_ss, Kpath, beta, sigma, nvec, alpha, A, L,
+                              delta, T, m, tol)
+        print(bpath)
+        Kpath_prime = bpath.sum(axis=1)  # Sum up the savings by period.
+        Kpath_diff = l2_norm(Kpath, Kpath_prime)
+        Kpath = convex_combo(Kpath, Kpath_prime, xi)
+    return bpath
