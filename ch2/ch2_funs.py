@@ -48,10 +48,12 @@ def w_t(b_2_t, b_3_t, alpha, A, n):
     return (1 - alpha) * A * ((b_2_t + b_3_t) / n) ** alpha
 
 
-def get_wpath(Kpath, alpha, A, L):
+def get_wpath(Kpath, alpha, A, L, m):
     """ Wage path given aggregate capital path.
     """
-    return np.power((1 - alpha) * A * Kpath / L, alpha)
+    wpath0 = np.power((1 - alpha) * A * Kpath / L, alpha)
+    # Append the final value of wpath for each "extra" period.
+    return np.append(wpath0, [wpath0[-1] for i in range(m)])
 
 
 def r_t(b_2_t, b_3_t, alpha, A, L, delta):
@@ -72,10 +74,12 @@ def r_t(b_2_t, b_3_t, alpha, A, L, delta):
     return alpha * A * (L / (b_2_t + b_3_t)) ** (1 - alpha) - delta
 
 
-def get_rpath(Kpath, alpha, A, L, delta):
+def get_rpath(Kpath, alpha, A, L, delta, m):
     """ Interest rate path given aggregate capital path.
     """
-    return alpha * A * np.power(L / Kpath, 1 - alpha) - delta
+    rpath0 = alpha * A * np.power(L / Kpath, 1 - alpha) - delta
+    # Append the final value of rpath for each "extra" period.
+    return np.append(rpath0, [rpath0[-1] for i in range(m)])
 
 
 def c(b_2, b_3, w, r, nvec):
@@ -264,7 +268,7 @@ def tpi_b_3_2(b_3_2_guess, b0, wpath, rpath, beta, sigma, nvec, tol):
 def l2_norm(v1, v2):
     """ Sum of squared percent deviations.
     """
-    return np.power(v1 / v2 - 1, 2)
+    return np.power(v1 / v2 - 1, 2).sum()
 
 
 def tpi_pair_opt_fun(bvec, wpath, rpath, beta, sigma, nvec, t):
@@ -319,23 +323,20 @@ def tpi_iteration(b0, b_ss, Kpath, beta, sigma, nvec, alpha, A, L, delta, T, m,
         Path of savings.
     """
     # Calculate wpath and rpath.
-    wpath = get_wpath(Kpath, alpha, A, L)
-    rpath = get_rpath(Kpath, alpha, A, L, delta)
+    wpath = get_wpath(Kpath, alpha, A, L, m)
+    rpath = get_rpath(Kpath, alpha, A, L, delta, m)
     # Initialize savings path with one column per age and one row per period.
     # e.g. bpath[0][1] corresponds to b_{2,3}.
-    bpath = np.zeros([T + m - 1, 2])
-    print(bpath)
+    bpath = np.zeros([2, T + m - 1])
     # Calculate b_{3,2}.
     b_3_2_guess = b_ss[1]  # Guess the steady state.
-    print(b_3_2_guess)
     bpath[1][0] = tpi_b_3_2(b_3_2_guess, b0, wpath, rpath, beta, sigma, nvec,
                             tol)
-    print(bpath)
     # Calculate remaining periods.
     for t in range(2, T + m):
-        res = tpi_pair(b_ss[1:], wpath, rpath, beta, sigma, nvec, t, tol)
-        bpath[t-2][0] = res[0]
-        bpath[t-1][1] = res[1]
+        res = tpi_pair(b_ss, wpath, rpath, beta, sigma, nvec, t, tol)
+        bpath[0][t-2] = res[0]
+        bpath[1][t-1] = res[1]
     return bpath
 
 
@@ -376,11 +377,17 @@ def tpi(b0_ratios, bvec_guess, beta, sigma, nvec, L, A, alpha, delta, T, m, xi,
     Kpath = np.linspace(sum(b0), sum(b_ss), num=T)
     Kpath_diff = tol + 1
     # Loop until Kpath convergence is reached.
+    counter = 0
     while Kpath_diff > tol:
         bpath = tpi_iteration(b0, b_ss, Kpath, beta, sigma, nvec, alpha, A, L,
                               delta, T, m, tol)
-        print(bpath)
-        Kpath_prime = bpath.sum(axis=1)  # Sum up the savings by period.
+        # Sum up the savings by period and drop extras.
+        Kpath_prime = bpath.sum(axis=0)[:T]
         Kpath_diff = l2_norm(Kpath, Kpath_prime)
         Kpath = convex_combo(Kpath, Kpath_prime, xi)
+        counter += 1
+        if counter % 100 == 0:
+            print(str(counter) + ': ' + str(Kpath_diff))
+        if counter > 1000:
+            return
     return bpath
