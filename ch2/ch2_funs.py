@@ -18,16 +18,20 @@ def u_crra(c, sigma):
     return (c ** (1 - sigma) - 1) / (1 - sigma)
 
 
-def du_crra(c, sigma):
+def du_crra(c, sigma, cstr_filler=9999.):
     """ Derivative of constant relative risk aversion utility function.
 
     Args:
         c: Consumption.
         sigma: Coefficient of relative risk aversion.
+        cstr_filler: Filler to provide for nonpositive values of c.
+            Defaults to 9999.
 
     Returns:
         Derivative of utility with respect to consumption.
     """
+    if c <= 0:
+        c = cstr_filler
     return c ** (-sigma)
 
 
@@ -237,7 +241,7 @@ def get_SS(params, bvec_guess, SS_graphs=False):
 
 
 def b_3_2_opt_fun(b_3_2, b0, wpath, rpath, beta, sigma, nvec):
-    """ Function to root-find to get steady-state solution.
+    """ Function to root-find to get steady-state solution
 
     Args:
         b_3_2: Savings of middle-aged s=2 for the last period of his life.
@@ -249,11 +253,16 @@ def b_3_2_opt_fun(b_3_2, b0, wpath, rpath, beta, sigma, nvec):
         nvec:
 
     Returns:
-        Euler error.
+        Euler error for optimal savings decision for the initial middle-aged 
+        s = 2 individual for the last period of his life b_{3,2}.
     """
-    lhs = du_crra(nvec[1] * wpath[0] + (1 + rpath[0]) * b0[0] - b_3_2, sigma)
-    rhs = (beta * (1 + rpath[1]) * 
-        du_crra((1 + rpath[1] * b_3_2 + nvec[2] * wpath[1]), sigma))
+    c2 = nvec[1] * wpath[0] + (1 + rpath[0]) * b0[0] - b_3_2
+    c3 = (1 + rpath[1]) * b_3_2 + nvec[2] * wpath[1]
+    lhs = du_crra(c2, sigma)
+    rhs = beta * (1 + rpath[1]) * du_crra(c3, sigma)
+    # Ensure nonnegative consumption.
+    if (c2 <= 0) or (c3 <= 0):
+        return 9999.
     return lhs - rhs
 
 
@@ -281,19 +290,27 @@ def tpi_pair_opt_fun(bvec, wpath, rpath, beta, sigma, nvec, t):
         sigma:
         nvec:
         t: Time period to solve for, i.e. b_{2,t} an b_{3,t+1}.
+
+    Returns:
+        List of Euler errors for two equations.
     """
     n_1, n_2, n_3 = nvec
+    cvec = np.array([n_1 * wpath[t-2] - bvec[0],
+                     n_2 * wpath[t-1] + (1 + rpath[t-1]) * bvec[0] - bvec[1],
+                     (1 + rpath[t]) * bvec[1] + n_3 * wpath[t]])
     # Equation 2.32.
-    lhs_2_32 = du_crra(n_1 * wpath[t-2] - bvec[0], sigma)
-    rhs_2_32 = (beta * (1 + rpath[t-1]) * 
-                du_crra(n_2 * wpath[t-1] + (1 + rpath[t-1]) * bvec[0] - bvec[1],
-                        sigma))
+    lhs_2_32 = du_crra(cvec[0], sigma)
+    rhs_2_32 = beta * (1 + rpath[t-1]) * du_crra(cvec[1], sigma)
     # Equation 2.33.
-    lhs_2_33 = du_crra(n_2 * wpath[t-1] + (1 + rpath[t-1]) * bvec[0] - bvec[1],
-                       sigma)
-    rhs_2_33 = (beta * (1 + rpath[t]) *
-                du_crra((1 + rpath[t]) * bvec[1] + n_3 * wpath[t], sigma))
-    return [rhs_2_32 - lhs_2_32, rhs_2_33 - lhs_2_33]
+    lhs_2_33 = du_crra(cvec[1], sigma)
+    rhs_2_33 = beta * (1 + rpath[t]) * du_crra(cvec[2], sigma)
+    # Construct Euler errors.
+    eul_errs = np.array([rhs_2_32 - lhs_2_32, rhs_2_33 - lhs_2_33])
+    # Check that consumption is positive.
+    cvec_cstr = cvec <= 0
+    eul_errs[cvec_cstr[:-1]] = 9999.
+    eul_errs[cvec_cstr[1:]] = 9999.
+    return eul_errs
 
 
 def tpi_pair(bvec_guess, wpath, rpath, beta, sigma, nvec, t, tol):
@@ -309,6 +326,9 @@ def tpi_pair(bvec_guess, wpath, rpath, beta, sigma, nvec, t, tol):
         nvec:
         t: Time period to solve for, i.e. b_{2,t} an b_{3,t+1}.
         tol: Tolerance.
+
+    Returns:
+        Result of opt.root running tpi_pair_opt_fun with provided args.
     """
     return opt.root(tpi_pair_opt_fun, bvec_guess,
         (wpath, rpath, beta, sigma, nvec, t),
