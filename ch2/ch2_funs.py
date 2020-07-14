@@ -340,7 +340,7 @@ def tpi_iteration(b0, b_ss, Kpath, beta, sigma, nvec, alpha, A, L, delta, T, m,
     """ Single iteration.
 
     Returns:
-        Path of savings.
+        Path of savings bpath with shape (2, T+m).
     """
     # Calculate wpath and rpath.
     wpath = get_wpath(Kpath, alpha, A, L, m)
@@ -380,13 +380,14 @@ def tpi(b0_ratios, bvec_guess, beta, sigma, nvec, L, A, alpha, delta, T, m, xi,
         alpha:
         delta:
         T: 
-        m: Number of additioanl periods to solve for beyond T.
+        m: Number of additional periods to solve for beyond T.
         xi: Kpath blending parameter.
         tol: Tolerance for calculating the steady state, b_{3,2},
             each [b_{2,t}, b_{3_t+1}], and Kpath.
 
     Returns:
-        fd
+        Equilibrium transition path of capital bpath, size (2, T+m),
+        e.g. bpath[0][2] is b_{s=2, t=3}.
     """
     # Calculate steady state.
     ss = get_SS((beta, sigma, nvec, L, A, alpha, delta, tol), bvec_guess)
@@ -405,6 +406,7 @@ def tpi(b0_ratios, bvec_guess, beta, sigma, nvec, L, A, alpha, delta, T, m, xi,
         Kpath_prime = bpath.sum(axis=0)[:T]
         Kpath_diff = l2_norm(Kpath, Kpath_prime)
         Kpath = convex_combo(Kpath, Kpath_prime, xi)
+        # Keep a counter to report status in case it takes too many iterations.
         counter += 1
         if counter % 100 == 0:
             print(str(counter) + ': ' + str(Kpath_diff))
